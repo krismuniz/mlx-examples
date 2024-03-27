@@ -16,3 +16,5 @@ export const meaningOfLife: { answer: number, question: { author: { name: string
 export const inventory = { fruit: [string, string, string] }
 ~~~ What's the third fruit"
 ```
+
+https://github.com/krismuniz/mlx-examples/assets/860507/39fd7fbd-0616-4e1d-9160-fa73ed3e2773
