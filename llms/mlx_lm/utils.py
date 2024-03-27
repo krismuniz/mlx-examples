@@ -113,6 +113,9 @@ def apply_repetition_penalty(logits: mx.array, generated_tokens: Any, penalty: f
     return logits
 
 
+ConstraintFn = Callable[[mx.array, mx.array, list[tuple[int, float]]], mx.array]
+
+
 def generate_step(
     prompt: mx.array,
     model: nn.Module,
@@ -120,6 +123,7 @@ def generate_step(
     repetition_penalty: Optional[float] = None,
     repetition_context_size: Optional[int] = 20,
     top_p: float = 1.0,
+    constraint: Optional[ConstraintFn] = None,
 ) -> Generator[Tuple[mx.array, mx.array], None, None]:
     """
     A generator producing text based on the given prompt from the model.
@@ -175,7 +179,7 @@ def generate_step(
         )
 
     y = prompt
-    cache = None
+    cache: list[int] = None
 
     repetition_context = prompt.tolist()
 
@@ -185,6 +189,16 @@ def generate_step(
     while True:
         logits, cache = model(y[None], cache=cache)
         logits = logits[:, -1, :]
+
+        top_k_probs = mx.sort(logits)[0][-5:][::-1]
+        top_k_indices = mx.argsort(logits)[0][-5:][::-1]
+
+        top_k = [
+            [idx.item(), prob.item()] for idx, prob in zip(top_k_indices, top_k_probs)
+        ]
+
+        if constraint is not None:
+            logits = constraint(logits, y, top_k)
 
         if repetition_penalty:
             logits = apply_repetition_penalty(
@@ -212,6 +226,7 @@ def generate(
     repetition_penalty: Optional[float] = None,
     repetition_context_size: Optional[int] = None,
     top_p: float = 1.0,
+    constraint: Optional[ConstraintFn] = None,
 ) -> str:
     """
     Generate text from the model.
@@ -249,6 +264,7 @@ def generate(
             repetition_penalty,
             repetition_context_size,
             top_p,
+            constraint,
         ),
         range(max_tokens),
     ):
@@ -259,8 +275,18 @@ def generate(
             tic = time.perf_counter()
         tokens.append(token.item())
 
+        def dumb_decode(tokens):
+            return "".join(
+                [
+                    tokenizer.decode([token], skip_special_tokens=True)
+                    for token in tokens
+                ]
+            )
+
         if verbose:
-            s = tokenizer.decode(tokens)
+            # silly thing I have to do because no matter what configuration
+            # I pass to tokenizer.decode, it adds a space after the token
+            s = dumb_decode(tokens)
             if formatter:
                 formatter(s[skip:], prob.item())
                 skip = len(s)
@@ -269,7 +295,7 @@ def generate(
                 skip = len(s)
 
     token_count = len(tokens)
-    token_string = tokenizer.decode(tokens).replace(REPLACEMENT_CHAR, "")
+    token_string = dumb_decode(tokens).replace(REPLACEMENT_CHAR, "")
 
     if verbose:
         print(token_string[skip:], flush=True)
