@@ -2,4 +2,4 @@
 
 from .utils import convert, generate, load
 from .version import __version__
-from .constraints.base import T, tokenize_tree
+from .constraints.base import T, compile

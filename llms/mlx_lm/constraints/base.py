@@ -45,7 +45,7 @@ def T(*next: TokenTrie, close: Closing = lambda _: END) -> TokenTrie:
     return result
 
 
-def tokenize_tree(
+def compile(
     tree: TokenTrie,
     tokenize: Callable[[str], list[int]],
     end: list[TokenTrie] = [],
@@ -68,7 +68,7 @@ def tokenize_tree(
 
         if key == "@pop":
             if len(end) > 0:
-                current_dict.update(tokenize_tree(end[-1], tokenize, end[:-1]))
+                current_dict.update(compile(end[-1], tokenize, end[:-1]))
             continue
 
         for token in tokens:
@@ -77,6 +77,6 @@ def tokenize_tree(
 
             current_dict = current_dict[token]
 
-        current_dict.update(tokenize_tree(value, tokenize, end))
+        current_dict.update(compile(value, tokenize, end))
 
     return new_tree

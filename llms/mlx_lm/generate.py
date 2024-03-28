@@ -5,7 +5,7 @@ import argparse
 import mlx.core as mx
 
 from .utils import generate, load
-from .constraints.base import T, tokenize_tree
+from .constraints.base import T, compile
 from .constraints.javascript import (
     Statement,
     OneOf,
@@ -151,16 +151,7 @@ def main(args):
             close=tokenizer.eos_token,
         )
 
-        T(
-            T(
-                "user",
-                T(".name"),
-            ),
-            T("inventory", T(".fruit", T("[", T("1"), T("2"), T("3")), close="]")),
-            close=T(";", T(tokenizer.eos_token_id)),
-        )
-
-        tok_tree = tokenize_tree(
+        tok_tree = compile(
             decision_tree,
             tokenize=lambda text: tokenizer.encode(
                 text=text, add_special_tokens=False, verbose=True
