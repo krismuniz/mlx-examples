@@ -1,12 +1,20 @@
 # Copyright © 2023-2024 Apple Inc.
 
 import argparse
-import random
-from typing import Callable, Union
 
 import mlx.core as mx
 
 from .utils import generate, load
+from .constraints.base import T, tokenize_tree
+from .constraints.javascript import (
+    Statement,
+    OneOf,
+    CallOf,
+    MembersOf,
+    Property,
+    ComputedProperty,
+    StringLiteral,
+)
 
 DEFAULT_MODEL_PATH = "mlx_model"
 DEFAULT_PROMPT = "hello"
@@ -98,26 +106,6 @@ def colorprint_by_t0(s, t0):
     colorprint(color, s)
 
 
-def tokenize_tree(
-    tree: dict[Union[str, int], any],
-    tokenize: Callable[[str], list[int]],
-    bos_token_id: int = 1,
-):
-    """
-    Tokenize the keys of a tree recursively.
-    """
-    new_tree = {}
-    for key, value in tree.items():
-        tokens = tokenize(key) if isinstance(key, str) else [key]
-        current_dict = new_tree
-        for token in tokens:
-            if token not in current_dict:
-                current_dict[token] = {}
-            current_dict = current_dict[token]
-        current_dict.update(tokenize_tree(value, tokenize, bos_token_id))
-    return new_tree
-
-
 def main(args):
     mx.random.seed(args.seed)
 
@@ -144,55 +132,43 @@ def main(args):
     formatter = colorprint_by_t0 if args.colorize else None
 
     def constrainer():
-        END = {"\n```": {tokenizer.eos_token_id: {}}}
+        decision_tree = T(
+            Statement(
+                OneOf(
+                    MembersOf("user", Property("name")),
+                    MembersOf(
+                        "inventory",
+                        Property(
+                            "fruit",
+                            ComputedProperty("1"),
+                            ComputedProperty("2"),
+                            ComputedProperty("3"),
+                        ),
+                    ),
+                    CallOf("alert", StringLiteral("WEPA!")),
+                )
+            ),
+            close=tokenizer.eos_token,
+        )
 
-        decision_tree = {
-            "```javascript\n": {
-                "meaningOfLife": {
-                    ".": {
-                        "answer": END,
-                        ".": {
-                            "question": {
-                                ".": {
-                                    "author": {
-                                        ".": {"name": END, "born": END, "died": END}
-                                    }
-                                }
-                            },
-                        },
-                    },
-                },
-                "inventory": {
-                    ".": {
-                        "fruit": {
-                            "[": {
-                                "0": {"]": END},
-                                "1": {"]": END},
-                                "2": {"]": END},
-                            },
-                        },
-                    },
-                },
-                "userMap": {"[userId]": END},
-                "window.localStorage.getItem": {
-                    "(": {
-                        "userMap": {"[userId]": {")": END}},
-                    },
-                },
-            }
-        }
+        T(
+            T(
+                "user",
+                T(".name"),
+            ),
+            T("inventory", T(".fruit", T("[", T("1"), T("2"), T("3")), close="]")),
+            close=T(";", T(tokenizer.eos_token_id)),
+        )
 
         tok_tree = tokenize_tree(
             decision_tree,
             tokenize=lambda text: tokenizer.encode(
                 text=text, add_special_tokens=False, verbose=True
             ),
-            bos_token_id=tokenizer.bos_token_id,
         )
 
-        print("USING TOKEN TREE:")
+        print("COMPILED TOKEN TREE:")
         print(tok_tree)
-        print("\n")
 
         path = tok_tree
 
@@ -208,7 +184,7 @@ def main(args):
 
             if len(path.keys()) > 0:
                 for key in path.keys():
-                    logits[0, key] += 100
+                    logits[0, key] += top_k[0][1]
 
             return logits
 
